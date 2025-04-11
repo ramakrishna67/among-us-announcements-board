@@ -24,15 +24,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   } = useAnnouncements();
   
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isDisplayUpdating, setIsDisplayUpdating] = useState<boolean>(false);
   
   const handleLogout = () => {
     toast.info("Logged out successfully");
     onLogout();
   };
   
-  const handleDisplayToggle = (display: "announcements" | "timer") => {
-    setCurrentDisplay(display);
-    toast.success(`Now displaying: ${display === "announcements" ? "Announcements" : "Timer"}`);
+  const handleDisplayToggle = async (display: "announcements" | "timer") => {
+    setIsDisplayUpdating(true);
+    
+    try {
+      await setCurrentDisplay(display);
+      toast.success(`Now displaying: ${display === "announcements" ? "Announcements" : "Timer"}`);
+    } catch (error) {
+      console.error("Error updating display:", error);
+      toast.error("Failed to update display settings");
+    } finally {
+      setIsDisplayUpdating(false);
+    }
   };
   
   const handleDelete = async (id: string) => {
@@ -68,9 +78,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                   : "bg-card hover:bg-amongus-purple/20"
               }`}
               onClick={() => handleDisplayToggle("announcements")}
+              disabled={isDisplayUpdating || currentDisplay === "announcements"}
             >
               <MessageSquare className="mr-2 h-4 w-4" /> 
-              Display Announcements
+              {isDisplayUpdating ? "Updating..." : "Display Announcements"}
             </Button>
             
             <Button
@@ -80,9 +91,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                   : "bg-card hover:bg-amongus-purple/20"
               }`}
               onClick={() => handleDisplayToggle("timer")}
+              disabled={isDisplayUpdating || currentDisplay === "timer"}
             >
               <Timer className="mr-2 h-4 w-4" /> 
-              Display Timer
+              {isDisplayUpdating ? "Updating..." : "Display Timer"}
             </Button>
           </div>
         </Card>

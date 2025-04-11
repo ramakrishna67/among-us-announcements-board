@@ -129,5 +129,5 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
   );
 };
 
-// Re-export types from the context
-export { AnnouncementType, Timer, Announcement } from "@/types/announcement.types";
+// Re-export types from the context - Fixed with export type
+export type { AnnouncementType, Timer, Announcement } from "@/types/announcement.types";

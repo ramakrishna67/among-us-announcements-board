@@ -25,6 +25,7 @@ const TimerForm = () => {
   const [date, setDate] = useState<Date | undefined>(undefined);
   const [time, setTime] = useState("");
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const validate = () => {
     const newErrors: { [key: string]: string } = {};
@@ -45,7 +46,7 @@ const TimerForm = () => {
     return Object.keys(newErrors).length === 0;
   };
   
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!validate()) {
@@ -64,19 +65,36 @@ const TimerForm = () => {
       return;
     }
     
-    setTimer({
-      title,
-      description: description || undefined,
-      endTime: endDate,
-    });
+    setIsSubmitting(true);
     
-    // Reset form
-    setTitle("");
-    setDescription("");
-    setDate(undefined);
-    setTime("");
-    
-    toast.success("Timer set successfully");
+    try {
+      await setTimer({
+        title,
+        description: description || undefined,
+        endTime: endDate,
+      });
+      
+      // Reset form
+      setTitle("");
+      setDescription("");
+      setDate(undefined);
+      setTime("");
+      
+    } catch (error) {
+      console.error("Error setting timer:", error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+  
+  const clearTimer = async () => {
+    try {
+      await setTimer(null);
+      toast.success("Timer cleared");
+    } catch (error) {
+      console.error("Error clearing timer:", error);
+      toast.error("Failed to clear timer");
+    }
   };
   
   return (
@@ -167,12 +185,22 @@ const TimerForm = () => {
           </div>
         </div>
         
-        <div className="pt-4">
+        <div className="pt-4 flex gap-4">
           <Button 
             type="submit" 
-            className="among-button w-full"
+            className="among-button flex-1"
+            disabled={isSubmitting}
           >
-            Set Timer
+            {isSubmitting ? "Setting..." : "Set Timer"}
+          </Button>
+          
+          <Button 
+            type="button"
+            variant="outline" 
+            className="border-amongus-red text-amongus-red hover:bg-amongus-red/10"
+            onClick={clearTimer}
+          >
+            Clear Timer
           </Button>
         </div>
       </form>

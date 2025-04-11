@@ -1,10 +1,12 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 export type AnnouncementType = "regular" | "emergency";
 
 export interface Timer {
+  id?: string;
   endTime: Date;
   title: string;
   description?: string;
@@ -44,64 +46,266 @@ export const useAnnouncements = () => {
   return context;
 };
 
-// Mock announcements for initial state
-const initialAnnouncements: Announcement[] = [
-  {
-    id: "1",
-    title: "Welcome to SUS-Hacks!",
-    content: "The hackathon begins at 9:00 AM in the main hall. Don't be sus, be on time!",
-    type: "regular",
-    createdAt: new Date(),
-  },
-  {
-    id: "2",
-    title: "EMERGENCY MEETING!",
-    content: "All teams gather in Meeting Room B for important announcements!",
-    type: "emergency",
-    createdAt: new Date(Date.now() - 1000 * 60 * 30), // 30 minutes ago
-  },
-];
-
 export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [announcements, setAnnouncements] = useState<Announcement[]>(initialAnnouncements);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [currentDisplay, setCurrentDisplay] = useState<"announcements" | "timer">("announcements");
-  const [timer, setTimer] = useState<Timer | null>(null);
+  const [timer, setTimerState] = useState<Timer | null>(null);
   const [playSound, setPlaySound] = useState(false);
   const [soundDuration, setSoundDuration] = useState(5); // default 5 seconds
+  const [loading, setLoading] = useState(true);
   
-  // In a real app, this would sync with a database using Supabase
-  const addAnnouncement = (newAnnouncement: Omit<Announcement, "id" | "createdAt">) => {
-    const announcementWithId = {
-      ...newAnnouncement,
-      id: Date.now().toString(),
-      createdAt: new Date(),
+  // Fetch initial data
+  useEffect(() => {
+    const fetchAnnouncements = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('announcements')
+          .select('*')
+          .order('created_at', { ascending: false });
+          
+        if (error) throw error;
+        
+        if (data) {
+          const formattedAnnouncements: Announcement[] = data.map(item => ({
+            id: item.id,
+            title: item.title,
+            content: item.content,
+            type: item.type as AnnouncementType,
+            createdAt: new Date(item.created_at),
+            imageUrl: item.image_url,
+            videoUrl: item.video_url
+          }));
+          
+          setAnnouncements(formattedAnnouncements);
+        }
+      } catch (error) {
+        console.error("Error fetching announcements:", error);
+        toast.error("Failed to load announcements");
+      } finally {
+        setLoading(false);
+      }
     };
     
-    setAnnouncements((prevAnnouncements) => [announcementWithId, ...prevAnnouncements]);
+    const fetchActiveTimer = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('timers')
+          .select('*')
+          .eq('active', true)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+          
+        if (error) {
+          if (error.code !== 'PGRST116') { // PGRST116 is "No rows returned" which is expected if no timer is active
+            console.error("Error fetching timer:", error);
+          }
+          return;
+        }
+        
+        if (data) {
+          setTimerState({
+            id: data.id,
+            title: data.title,
+            description: data.description,
+            endTime: new Date(data.end_time)
+          });
+          
+          if (new Date(data.end_time) > new Date()) {
+            setCurrentDisplay("timer");
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching timer:", error);
+      }
+    };
     
-    // Show notification
-    toast.success("New announcement posted!", {
-      description: newAnnouncement.title,
-    });
+    fetchAnnouncements();
+    fetchActiveTimer();
     
-    // Play sound if enabled
-    if (playSound) {
-      const audio = new Audio("/announcement-sound.mp3");
-      audio.play();
+    // Set up realtime subscriptions
+    const announcementsChannel = supabase
+      .channel('public:announcements')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'announcements' 
+      }, (payload) => {
+        console.log('Announcement change received!', payload);
+        
+        if (payload.eventType === 'INSERT') {
+          const newAnnouncement = payload.new;
+          const formattedAnnouncement: Announcement = {
+            id: newAnnouncement.id,
+            title: newAnnouncement.title,
+            content: newAnnouncement.content,
+            type: newAnnouncement.type as AnnouncementType,
+            createdAt: new Date(newAnnouncement.created_at),
+            imageUrl: newAnnouncement.image_url,
+            videoUrl: newAnnouncement.video_url
+          };
+          
+          setAnnouncements(prev => [formattedAnnouncement, ...prev]);
+          
+          // Play sound if enabled
+          if (playSound) {
+            const audio = new Audio("/announcement-sound.mp3");
+            audio.play();
+            
+            // Stop sound after specified duration
+            setTimeout(() => {
+              audio.pause();
+              audio.currentTime = 0;
+            }, soundDuration * 1000);
+          }
+          
+          toast.info("New announcement received!", {
+            description: newAnnouncement.title,
+          });
+        } else if (payload.eventType === 'DELETE') {
+          const deletedId = payload.old.id;
+          setAnnouncements(prev => prev.filter(a => a.id !== deletedId));
+        } else if (payload.eventType === 'UPDATE') {
+          const updatedAnnouncement = payload.new;
+          setAnnouncements(prev => prev.map(a => {
+            if (a.id === updatedAnnouncement.id) {
+              return {
+                ...a,
+                title: updatedAnnouncement.title,
+                content: updatedAnnouncement.content,
+                type: updatedAnnouncement.type,
+                imageUrl: updatedAnnouncement.image_url,
+                videoUrl: updatedAnnouncement.video_url
+              };
+            }
+            return a;
+          }));
+        }
+      })
+      .subscribe();
       
-      // Stop sound after specified duration
-      setTimeout(() => {
-        audio.pause();
-        audio.currentTime = 0;
-      }, soundDuration * 1000);
+    const timersChannel = supabase
+      .channel('public:timers')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'timers' 
+      }, (payload) => {
+        console.log('Timer change received!', payload);
+        
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          const newTimer = payload.new;
+          
+          if (newTimer.active) {
+            const timerObj: Timer = {
+              id: newTimer.id,
+              title: newTimer.title,
+              description: newTimer.description,
+              endTime: new Date(newTimer.end_time)
+            };
+            
+            setTimerState(timerObj);
+            setCurrentDisplay("timer");
+            
+            toast.info("Timer updated!", {
+              description: newTimer.title,
+            });
+          } else if (payload.eventType === 'UPDATE' && !newTimer.active && timer?.id === newTimer.id) {
+            setTimerState(null);
+            setCurrentDisplay("announcements");
+          }
+        } else if (payload.eventType === 'DELETE' && timer?.id === payload.old.id) {
+          setTimerState(null);
+          setCurrentDisplay("announcements");
+        }
+      })
+      .subscribe();
+      
+    // Cleanup function
+    return () => {
+      supabase.removeChannel(announcementsChannel);
+      supabase.removeChannel(timersChannel);
+    };
+  }, [playSound, soundDuration]);
+  
+  const addAnnouncement = async (newAnnouncement: Omit<Announcement, "id" | "createdAt">) => {
+    try {
+      const { data, error } = await supabase
+        .from('announcements')
+        .insert({
+          title: newAnnouncement.title,
+          content: newAnnouncement.content,
+          type: newAnnouncement.type,
+          image_url: newAnnouncement.imageUrl,
+          video_url: newAnnouncement.videoUrl
+        })
+        .select()
+        .single();
+        
+      if (error) throw error;
+      
+      toast.success("Announcement posted successfully!");
+    } catch (error) {
+      console.error("Error adding announcement:", error);
+      toast.error("Failed to post announcement");
     }
   };
   
-  const deleteAnnouncement = (id: string) => {
-    setAnnouncements((prevAnnouncements) => 
-      prevAnnouncements.filter((announcement) => announcement.id !== id)
-    );
+  const deleteAnnouncement = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('announcements')
+        .delete()
+        .eq('id', id);
+        
+      if (error) throw error;
+      
+      toast.success("Announcement deleted successfully!");
+    } catch (error) {
+      console.error("Error deleting announcement:", error);
+      toast.error("Failed to delete announcement");
+    }
   };
+  
+  const setTimer = async (timerData: Timer | null) => {
+    try {
+      // First, deactivate any existing active timers
+      await supabase
+        .from('timers')
+        .update({ active: false })
+        .eq('active', true);
+        
+      if (timerData) {
+        const { data, error } = await supabase
+          .from('timers')
+          .insert({
+            title: timerData.title,
+            description: timerData.description,
+            end_time: timerData.endTime.toISOString(),
+            active: true
+          })
+          .select()
+          .single();
+          
+        if (error) throw error;
+        
+        toast.success("Timer set successfully!");
+        setCurrentDisplay("timer");
+      } else {
+        setTimerState(null);
+        setCurrentDisplay("announcements");
+        toast.info("Timer cleared");
+      }
+    } catch (error) {
+      console.error("Error setting timer:", error);
+      toast.error("Failed to set timer");
+    }
+  };
+  
+  // If still loading, show a simple loading state or nothing
+  if (loading) {
+    return null;
+  }
   
   return (
     <AnnouncementContext.Provider

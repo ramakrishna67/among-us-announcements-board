@@ -9,6 +9,7 @@ import SoundControl from "./SoundControl";
 import { useAnnouncements } from "@/context/AnnouncementContext";
 import { LogOut, Bell, Timer, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
+import { formatDistanceToNow } from "date-fns";
 
 interface AdminPanelProps {
   onLogout: () => void;
@@ -22,6 +23,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     setCurrentDisplay 
   } = useAnnouncements();
   
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  
   const handleLogout = () => {
     toast.info("Logged out successfully");
     onLogout();
@@ -30,6 +33,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const handleDisplayToggle = (display: "announcements" | "timer") => {
     setCurrentDisplay(display);
     toast.success(`Now displaying: ${display === "announcements" ? "Announcements" : "Timer"}`);
+  };
+  
+  const handleDelete = async (id: string) => {
+    setDeletingId(id);
+    try {
+      await deleteAnnouncement(id);
+    } finally {
+      setDeletingId(null);
+    }
   };
   
   return (
@@ -110,13 +122,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => deleteAnnouncement(announcement.id)}
+                          onClick={() => handleDelete(announcement.id)}
+                          disabled={deletingId === announcement.id}
                           className="text-amongus-red hover:bg-amongus-red/10"
                         >
-                          Delete
+                          {deletingId === announcement.id ? "Deleting..." : "Delete"}
                         </Button>
                       </div>
                       <p className="mt-2 text-sm text-white">{announcement.content}</p>
+                      <div className="mt-2 text-xs text-amongus-gray">
+                        {formatDistanceToNow(announcement.createdAt, { addSuffix: true })}
+                      </div>
                     </Card>
                   ))
                 ) : (

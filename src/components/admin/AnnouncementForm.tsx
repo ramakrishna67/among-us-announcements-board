@@ -19,9 +19,7 @@ const AnnouncementForm = () => {
   const [imageUrl, setImageUrl] = useState<string | undefined>();
   const [videoUrl, setVideoUrl] = useState<string | undefined>();
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
-  
-  // For demo purposes, we're using URL inputs
-  // In a real app, we'd use file uploads to Supabase storage
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const validate = () => {
     const newErrors: { [key: string]: string } = {};
@@ -38,7 +36,7 @@ const AnnouncementForm = () => {
     return Object.keys(newErrors).length === 0;
   };
   
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!validate()) {
@@ -46,22 +44,29 @@ const AnnouncementForm = () => {
       return;
     }
     
-    addAnnouncement({
-      title,
-      content,
-      type,
-      imageUrl,
-      videoUrl,
-    });
+    setIsSubmitting(true);
     
-    // Reset form
-    setTitle("");
-    setContent("");
-    setType("regular");
-    setImageUrl(undefined);
-    setVideoUrl(undefined);
-    
-    toast.success("Announcement created successfully");
+    try {
+      await addAnnouncement({
+        title,
+        content,
+        type,
+        imageUrl,
+        videoUrl,
+      });
+      
+      // Reset form
+      setTitle("");
+      setContent("");
+      setType("regular");
+      setImageUrl(undefined);
+      setVideoUrl(undefined);
+      
+    } catch (error) {
+      console.error("Error submitting announcement:", error);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
   
   return (
@@ -151,8 +156,9 @@ const AnnouncementForm = () => {
           <Button 
             type="submit" 
             className={`w-full ${type === "emergency" ? "emergency-button" : "among-button"}`}
+            disabled={isSubmitting}
           >
-            Post Announcement
+            {isSubmitting ? "Posting..." : "Post Announcement"}
           </Button>
         </div>
       </form>

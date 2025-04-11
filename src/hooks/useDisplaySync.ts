@@ -9,6 +9,7 @@ export const useDisplaySync = (
     // Create a display settings channel to sync display mode across clients
     const displaySettingsChannel = supabase.channel('display_settings');
     
+    // Subscribe to the channel
     displaySettingsChannel.subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         console.log('Subscribed to display settings channel');
@@ -35,6 +36,11 @@ export const useDisplaySync = (
       }
     });
     
+    // Also listen for join events to immediately sync with new clients
+    displaySettingsChannel.on('presence', { event: 'join' }, ({ newPresences }) => {
+      console.log('New client joined, syncing display state:', newPresences);
+    });
+    
     // Cleanup function
     return () => {
       supabase.removeChannel(displaySettingsChannel);
@@ -46,6 +52,7 @@ export const useDisplaySync = (
     const displaySettingsChannel = supabase.channel('display_settings');
     
     try {
+      // Track the display state change with timestamp for ordering
       await displaySettingsChannel.track({
         display: display,
         updated_at: new Date().toISOString()

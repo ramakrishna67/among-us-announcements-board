@@ -35,11 +35,15 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
     loading 
   } = useAnnouncementData();
   
+  // Initialize the current display based on timer presence
   const [currentDisplay, setCurrentDisplay] = useState<"announcements" | "timer">(
     timer ? "timer" : "announcements"
   );
   const [playSound, setPlaySound] = useState(false);
   const [soundDuration, setSoundDuration] = useState(5); // default 5 seconds
+  
+  // Set up display sync with other clients
+  const { updateDisplaySettings } = useDisplaySync(setCurrentDisplay);
   
   // Set up real-time subscriptions
   useAnnouncementSubscriptions({
@@ -50,9 +54,6 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
     playSound,
     soundDuration
   });
-  
-  // Set up display sync
-  const { updateDisplaySettings } = useDisplaySync(setCurrentDisplay);
   
   // API functions
   const addAnnouncement = async (newAnnouncement: Omit<Announcement, "id" | "createdAt">) => {
@@ -74,13 +75,21 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const setTimer = async (timerData: Timer | null) => {
     try {
       await setTimerService(timerData);
+      
+      // Update the display mode based on timer presence
       if (timerData) {
-        // Use the tracked display settings update
-        await updateDisplaySettings("timer");
+        // Use the tracked display settings update to ensure synchronization
+        const success = await updateDisplaySettings("timer");
+        if (!success) {
+          toast.error("Failed to update display mode");
+        }
       } else {
         setTimerState(null);
-        // Use the tracked display settings update
-        await updateDisplaySettings("announcements");
+        // Use the tracked display settings update to ensure synchronization
+        const success = await updateDisplaySettings("announcements");
+        if (!success) {
+          toast.error("Failed to update display mode");
+        }
       }
     } catch (error) {
       console.error("Error setting timer:", error);
@@ -91,11 +100,17 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
   // Sync display settings across clients
   const handleSetCurrentDisplay = async (display: "announcements" | "timer") => {
     try {
-      const success = await updateDisplaySettings(display);
-      if (success) {
-        setCurrentDisplay(display);
-      } else {
-        toast.error("Failed to update display settings");
+      // Only update if the display mode is actually changing
+      if (display !== currentDisplay) {
+        console.log(`Changing display from ${currentDisplay} to ${display}`);
+        
+        const success = await updateDisplaySettings(display);
+        if (success) {
+          // The actual state update will happen through the presence subscription
+          toast.success(`Display updated to ${display}`);
+        } else {
+          toast.error("Failed to update display settings");
+        }
       }
     } catch (error) {
       console.error("Error updating display settings:", error);

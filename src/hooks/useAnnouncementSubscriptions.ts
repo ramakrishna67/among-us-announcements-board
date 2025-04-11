@@ -104,18 +104,21 @@ export const useAnnouncementSubscriptions = ({
             };
             
             setTimerState(timerObj);
-            setCurrentDisplay("timer");
+            // Note: We don't automatically change the display here
+            // as that will happen through the display sync mechanism
             
             toast.info("Timer updated!", {
               description: newTimer.title,
             });
           } else if (payload.eventType === 'UPDATE' && !newTimer.active && timer?.id === newTimer.id) {
             setTimerState(null);
-            setCurrentDisplay("announcements");
+            // Note: We don't automatically change the display here
+            // as that will happen through the display sync mechanism
           }
         } else if (payload.eventType === 'DELETE' && timer?.id === payload.old.id) {
           setTimerState(null);
-          setCurrentDisplay("announcements");
+          // Note: We don't automatically change the display here
+          // as that will happen through the display sync mechanism
         }
       })
       .subscribe();

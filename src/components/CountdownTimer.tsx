@@ -42,12 +42,13 @@ const CountdownTimer: React.FC<CountdownTimerProps> = ({ timer }) => {
     
     setTimeLeft(calculateTimeLeft());
     
-    const timer = setInterval(() => {
+    // Renamed from 'timer' to 'intervalId' to avoid collision with prop name
+    const intervalId = setInterval(() => {
       const newTimeLeft = calculateTimeLeft();
       setTimeLeft(newTimeLeft);
     }, 1000);
     
-    return () => clearInterval(timer);
+    return () => clearInterval(intervalId);
   }, [timer.endTime]);
   
   return (

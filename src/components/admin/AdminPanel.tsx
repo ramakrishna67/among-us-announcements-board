@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,22 +20,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     announcements, 
     deleteAnnouncement, 
     currentDisplay,
-    setCurrentDisplay,
-    timer
+    setCurrentDisplay 
   } = useAnnouncements();
   
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isDisplayUpdating, setIsDisplayUpdating] = useState<boolean>(false);
-  const [lastAttemptedDisplay, setLastAttemptedDisplay] = useState<"announcements" | "timer" | null>(null);
-  
-  // Effect to monitor display mode changes and update button states
-  useEffect(() => {
-    if (lastAttemptedDisplay && lastAttemptedDisplay === currentDisplay) {
-      // If the current display matches what we last tried to set, we can stop the loading state
-      setIsDisplayUpdating(false);
-      setLastAttemptedDisplay(null);
-    }
-  }, [currentDisplay, lastAttemptedDisplay]);
   
   const handleLogout = () => {
     toast.info("Logged out successfully");
@@ -43,24 +32,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   };
   
   const handleDisplayToggle = async (display: "announcements" | "timer") => {
-    // Don't do anything if we're already showing this display or if we're updating
-    if (currentDisplay === display || isDisplayUpdating) return;
-    
     setIsDisplayUpdating(true);
-    setLastAttemptedDisplay(display);
     
     try {
       await setCurrentDisplay(display);
-      // Toast notification is handled in the context
+      toast.success(`Now displaying: ${display === "announcements" ? "Announcements" : "Timer"}`);
     } catch (error) {
       console.error("Error updating display:", error);
       toast.error("Failed to update display settings");
+    } finally {
       setIsDisplayUpdating(false);
-      setLastAttemptedDisplay(null);
     }
-    
-    // Note: We don't set isDisplayUpdating to false here
-    // That will happen in the useEffect when the currentDisplay actually changes
   };
   
   const handleDelete = async (id: string) => {
@@ -71,10 +53,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
       setDeletingId(null);
     }
   };
-  
-  // Determine button states based on current display and timer existence
-  const showTimerDisabled = isDisplayUpdating || currentDisplay === "timer" || !timer;
-  const showAnnouncementsDisabled = isDisplayUpdating || currentDisplay === "announcements";
   
   return (
     <div className="container mx-auto px-4 py-8">
@@ -100,12 +78,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                   : "bg-card hover:bg-amongus-purple/20"
               }`}
               onClick={() => handleDisplayToggle("announcements")}
-              disabled={showAnnouncementsDisabled}
+              disabled={isDisplayUpdating || currentDisplay === "announcements"}
             >
               <MessageSquare className="mr-2 h-4 w-4" /> 
-              {isDisplayUpdating && lastAttemptedDisplay === "announcements" 
-                ? "Updating..." 
-                : "Display Announcements"}
+              {isDisplayUpdating ? "Updating..." : "Display Announcements"}
             </Button>
             
             <Button
@@ -115,20 +91,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                   : "bg-card hover:bg-amongus-purple/20"
               }`}
               onClick={() => handleDisplayToggle("timer")}
-              disabled={showTimerDisabled}
+              disabled={isDisplayUpdating || currentDisplay === "timer"}
             >
               <Timer className="mr-2 h-4 w-4" /> 
-              {isDisplayUpdating && lastAttemptedDisplay === "timer" 
-                ? "Updating..." 
-                : "Display Timer"}
+              {isDisplayUpdating ? "Updating..." : "Display Timer"}
             </Button>
           </div>
-          
-          {!timer && currentDisplay === "announcements" && (
-            <p className="mt-2 text-sm text-amongus-gray">
-              No active timer available. Create a timer first to display it.
-            </p>
-          )}
         </Card>
       </div>
       

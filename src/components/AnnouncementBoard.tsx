@@ -9,13 +9,10 @@ import { toast } from "sonner";
 const AnnouncementBoard = () => {
   const { announcements, currentDisplay, timer } = useAnnouncements();
   const [previousDisplay, setPreviousDisplay] = useState<"announcements" | "timer">(currentDisplay);
-  const [isTransitioning, setIsTransitioning] = useState(false);
   
-  // Effect to show a toast and handle transitions when display mode changes
+  // Effect to show a toast when display mode changes
   useEffect(() => {
     if (previousDisplay !== currentDisplay) {
-      setIsTransitioning(true);
-      
       const message = currentDisplay === "timer" 
         ? "Now displaying timer" 
         : "Now displaying announcements";
@@ -25,13 +22,7 @@ const AnnouncementBoard = () => {
         duration: 3000,
       });
       
-      // Set a short delay to ensure smooth animation transitions
-      const transitionTimeout = setTimeout(() => {
-        setIsTransitioning(false);
-        setPreviousDisplay(currentDisplay);
-      }, 500); // Match this with animation duration
-      
-      return () => clearTimeout(transitionTimeout);
+      setPreviousDisplay(currentDisplay);
     }
   }, [currentDisplay, previousDisplay]);
   

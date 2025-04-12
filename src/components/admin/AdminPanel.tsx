@@ -25,58 +25,51 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   } = useAnnouncements();
   
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [isDisplayUpdating, setIsDisplayUpdating] = useState<boolean>(false);
-  const [lastDisplay, setLastDisplay] = useState<string>(currentDisplay);
-  const [updateAttemptCount, setUpdateAttemptCount] = useState(0);
-  
-  // Effect to track display changes
-  useEffect(() => {
-    if (lastDisplay !== currentDisplay) {
-      setLastDisplay(currentDisplay);
-      setIsDisplayUpdating(false);
-    }
-  }, [currentDisplay, lastDisplay]);
+  const [isChangingDisplay, setIsChangingDisplay] = useState(false);
   
   const handleLogout = () => {
     toast.info("Logged out successfully");
     onLogout();
   };
   
+  // Handle display toggle with better error handling and UI feedback
   const handleDisplayToggle = async (display: "announcements" | "timer") => {
-    if (display === currentDisplay) return;
+    if (display === currentDisplay || isChangingDisplay) return;
     
-    setIsDisplayUpdating(true);
-    setUpdateAttemptCount(prev => prev + 1);
+    setIsChangingDisplay(true);
+    console.log(`Requesting display change to: ${display}`);
     
     try {
-      console.log(`Changing display from ${currentDisplay} to ${display}`);
-      await setCurrentDisplay(display);
-      toast.success(`Display changed to: ${display === "announcements" ? "Announcements" : "Timer"}`);
+      // Use a timeout to handle cases where the setCurrentDisplay doesn't resolve
+      const displayChangePromise = setCurrentDisplay(display);
       
-      // Set a timeout to reset updating state if the change doesn't happen
-      setTimeout(() => {
-        if (lastDisplay !== display) {
-          setIsDisplayUpdating(false);
+      // Create a timeout promise that rejects after 5 seconds
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("Display change timed out")), 5000);
+      });
+      
+      // Race the display change against the timeout
+      await Promise.race([displayChangePromise, timeoutPromise]);
+      
+      toast.success(`Display changed to: ${display === "announcements" ? "Announcements" : "Timer"}`);
+    } catch (error) {
+      console.error("Error changing display:", error);
+      toast.error("Failed to change display - please try again");
+      
+      // Force a retry after an error
+      setTimeout(async () => {
+        try {
+          console.log("Retrying display change...");
+          await setCurrentDisplay(display);
+        } catch (retryError) {
+          console.error("Retry also failed:", retryError);
         }
-      }, 5000);
-    } catch (error) {
-      console.error("Error updating display:", error);
-      setIsDisplayUpdating(false);
-      toast.error("Failed to update display settings");
-    }
-  };
-  
-  // Function to retry display change if it seems stuck
-  const retryDisplayChange = async () => {
-    const targetDisplay = currentDisplay === "announcements" ? "timer" : "announcements";
-    setIsDisplayUpdating(true);
-    
-    try {
-      toast.info(`Retrying change to ${targetDisplay}...`);
-      await setCurrentDisplay(targetDisplay);
-    } catch (error) {
-      console.error("Error in retry:", error);
-      setIsDisplayUpdating(false);
+      }, 1000);
+    } finally {
+      // Always reset the changing state, even if there was an error
+      setTimeout(() => {
+        setIsChangingDisplay(false);
+      }, 1000);
     }
   };
   
@@ -113,11 +106,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                   : "bg-card hover:bg-amongus-purple/20"
               }`}
               onClick={() => handleDisplayToggle("announcements")}
-              disabled={isDisplayUpdating || currentDisplay === "announcements"}
+              disabled={isChangingDisplay || currentDisplay === "announcements"}
             >
               <MessageSquare className="mr-2 h-4 w-4" /> 
-              {isDisplayUpdating && lastDisplay === "timer"
-                ? "Changing to Announcements..."
+              {isChangingDisplay && currentDisplay === "timer"
+                ? <><RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Changing to Announcements...</>
                 : currentDisplay === "announcements" 
                   ? "Currently Showing Announcements"
                   : "Display Announcements"}
@@ -130,11 +123,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                   : "bg-card hover:bg-amongus-purple/20"
               }`}
               onClick={() => handleDisplayToggle("timer")}
-              disabled={isDisplayUpdating || currentDisplay === "timer" || !timer}
+              disabled={isChangingDisplay || currentDisplay === "timer" || !timer}
             >
               <Timer className="mr-2 h-4 w-4" /> 
-              {isDisplayUpdating && lastDisplay === "announcements"
-                ? "Changing to Timer..."
+              {isChangingDisplay && currentDisplay === "announcements"
+                ? <><RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Changing to Timer...</>
                 : currentDisplay === "timer" 
                   ? "Currently Showing Timer"
                   : timer 
@@ -142,20 +135,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                     : "No Active Timer"}
             </Button>
             
-            {isDisplayUpdating && updateAttemptCount > 1 && (
+            {/* Show a manual force refresh button if needed */}
+            {isChangingDisplay && (
               <Button
                 variant="outline"
                 className="flex items-center"
-                onClick={retryDisplayChange}
+                onClick={() => {
+                  const targetDisplay = currentDisplay === "announcements" ? "timer" : "announcements";
+                  setCurrentDisplay(targetDisplay);
+                  toast.info("Forcing display refresh...");
+                }}
               >
                 <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> 
-                Retry Change
+                Force Refresh
               </Button>
             )}
           </div>
           <div className="mt-2 text-xs text-amongus-gray">
-            {isDisplayUpdating 
-              ? "Updating display on all connected devices..."
+            {isChangingDisplay 
+              ? "Syncing display across all connected devices..."
               : currentDisplay === "timer" 
                 ? "Currently displaying timer to all connected devices." 
                 : "Currently displaying announcements to all connected devices."}

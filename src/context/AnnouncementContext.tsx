@@ -27,7 +27,7 @@ interface AnnouncementContextType {
   addAnnouncement: (announcement: Omit<Announcement, "id" | "createdAt">) => void;
   deleteAnnouncement: (id: string) => void;
   currentDisplay: "announcements" | "timer";
-  setCurrentDisplay: (display: "announcements" | "timer") => void;
+  setCurrentDisplay: (display: "announcements" | "timer") => Promise<void>;
   timer: Timer | null;
   setTimer: (timer: Timer | null) => void;
   playSound: boolean;
@@ -48,16 +48,14 @@ export const useAnnouncements = () => {
 
 export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [currentDisplay, setCurrentDisplay] = useState<"announcements" | "timer">("announcements");
+  const [currentDisplay, setCurrentDisplayState] = useState<"announcements" | "timer">("announcements");
   const [timer, setTimerState] = useState<Timer | null>(null);
   const [playSound, setPlaySound] = useState(false);
   const [soundDuration, setSoundDuration] = useState(5); // default 5 seconds
   const [loading, setLoading] = useState(true);
   
-  // Create a ref to track the subscription status of the display settings channel
+  // Simplified display channel setup
   const displayChannelRef = useRef<any>(null);
-  const isSubscribedRef = useRef<boolean>(false);
-  const pendingDisplayUpdateRef = useRef<"announcements" | "timer" | null>(null);
   
   // Fetch initial data
   useEffect(() => {
@@ -116,8 +114,9 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
             endTime: new Date(data.end_time)
           });
           
+          // Only set to timer display if it's still valid
           if (new Date(data.end_time) > new Date()) {
-            setCurrentDisplay("timer");
+            setCurrentDisplayState("timer");
           }
         }
       } catch (error) {
@@ -125,62 +124,30 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
     };
     
-    // Initialize display settings channel
+    // Initialize display settings channel with a simpler approach
     const initDisplayChannel = () => {
-      // Create a display settings channel to sync display mode across clients
-      const channel = supabase.channel('display_settings', {
-        config: {
-          presence: {
-            key: window.crypto.randomUUID(),
-          },
-        },
-      });
+      const channel = supabase.channel('display_settings');
       
+      // Set up broadcast channel for syncing display type
       channel
-        .on('presence', { event: 'sync' }, () => {
-          const state = channel.presenceState();
-          console.log('Display settings state synced:', state);
-          
-          // Get the latest display settings from any client
-          const allStates = Object.values(state).flat() as any[];
-          if (allStates.length > 0) {
-            // Use the most recent state
-            const latestState = allStates.sort((a, b) => 
-              new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-            )[0];
+        .on('broadcast', { event: 'display_change' }, (payload) => {
+          console.log('Received display change broadcast:', payload);
+          if (payload?.payload?.display) {
+            setCurrentDisplayState(payload.payload.display);
             
-            if (latestState && latestState.display) {
-              console.log('Setting display mode from presence:', latestState.display);
-              setCurrentDisplay(latestState.display);
-            }
-          }
-        })
-        .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-          console.log('New client joined:', key, newPresences);
-          
-          // If there's a pending display update, immediately broadcast it again
-          // to ensure the new client gets the latest state
-          if (pendingDisplayUpdateRef.current) {
-            setTimeout(() => {
-              channel.track({
-                display: pendingDisplayUpdateRef.current,
-                updated_at: new Date().toISOString()
-              });
-            }, 500);
+            // Show toast when display changes
+            const message = payload.payload.display === "timer" 
+              ? "Now displaying timer" 
+              : "Now displaying announcements";
+            
+            toast.info(message);
           }
         })
         .subscribe((status) => {
           if (status === 'SUBSCRIBED') {
-            console.log('Subscribed to display settings channel');
-            isSubscribedRef.current = true;
-            
-            // Once subscribed, broadcast current display mode
-            setTimeout(() => {
-              channel.track({
-                display: currentDisplay,
-                updated_at: new Date().toISOString()
-              });
-            }, 500);
+            console.log('Successfully subscribed to display channel');
+          } else {
+            console.log('Subscription status:', status);
           }
         });
       
@@ -274,18 +241,22 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
             };
             
             setTimerState(timerObj);
-            updateDisplaySettings("timer");
+            
+            // Only switch to timer if it's still valid
+            if (new Date(newTimer.end_time) > new Date()) {
+              setCurrentDisplayAndBroadcast("timer");
+            }
             
             toast.info("Timer updated!", {
               description: newTimer.title,
             });
           } else if (payload.eventType === 'UPDATE' && !newTimer.active && timer?.id === newTimer.id) {
             setTimerState(null);
-            updateDisplaySettings("announcements");
+            setCurrentDisplayAndBroadcast("announcements");
           }
         } else if (payload.eventType === 'DELETE' && timer?.id === payload.old.id) {
           setTimerState(null);
-          updateDisplaySettings("announcements");
+          setCurrentDisplayAndBroadcast("announcements");
         }
       })
       .subscribe();
@@ -300,37 +271,31 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
     };
   }, [playSound, soundDuration, timer?.id]);
   
-  // Update display settings function that tracks the change across all clients
-  const updateDisplaySettings = async (display: "announcements" | "timer") => {
-    try {
-      console.log(`Attempting to update display to: ${display}`);
-      pendingDisplayUpdateRef.current = display;
-      
-      if (!isSubscribedRef.current || !displayChannelRef.current) {
-        console.log('Display channel not ready yet, setting local display only');
-        setCurrentDisplay(display);
-        return;
+  // Simplified function to update and broadcast display settings
+  const setCurrentDisplayAndBroadcast = async (display: "announcements" | "timer") => {
+    console.log(`Setting display to: ${display}`);
+    
+    // Update local state immediately
+    setCurrentDisplayState(display);
+    
+    // Broadcast the change to all clients if channel is available
+    if (displayChannelRef.current) {
+      try {
+        await displayChannelRef.current.send({
+          type: 'broadcast',
+          event: 'display_change',
+          payload: { 
+            display,
+            timestamp: new Date().toISOString()
+          }
+        });
+        console.log(`Broadcasted display change to: ${display}`);
+      } catch (error) {
+        console.error("Error broadcasting display change:", error);
+        toast.error("Failed to sync display with other devices");
       }
-      
-      // Send the update to all clients and wait for it to complete
-      await displayChannelRef.current.track({
-        display: display,
-        updated_at: new Date().toISOString()
-      });
-      
-      // Update our local state
-      setCurrentDisplay(display);
-      console.log(`Display successfully updated to: ${display}`);
-      
-      // Clear the pending update after successful tracking
-      setTimeout(() => {
-        pendingDisplayUpdateRef.current = null;
-      }, 500);
-    } catch (error) {
-      console.error("Error updating display settings:", error);
-      // Still update local state even if presence tracking fails
-      setCurrentDisplay(display);
-      toast.error("Failed to sync display settings");
+    } else {
+      console.warn("Display channel not initialized yet");
     }
   };
   
@@ -396,12 +361,12 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
         if (error) throw error;
         
         toast.success("Timer set successfully!");
-        // Use the tracked display settings update
-        updateDisplaySettings("timer");
+        // Switch to timer display
+        setCurrentDisplayAndBroadcast("timer");
       } else {
         setTimerState(null);
-        // Use the tracked display settings update
-        updateDisplaySettings("announcements");
+        // Switch back to announcements
+        setCurrentDisplayAndBroadcast("announcements");
         toast.info("Timer cleared");
       }
     } catch (error) {
@@ -422,7 +387,7 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
         addAnnouncement,
         deleteAnnouncement,
         currentDisplay,
-        setCurrentDisplay: updateDisplaySettings, // Use the tracked update function
+        setCurrentDisplay: setCurrentDisplayAndBroadcast,
         timer,
         setTimer,
         playSound,

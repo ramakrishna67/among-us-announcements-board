@@ -8,59 +8,39 @@ import { toast } from "sonner";
 
 const AnnouncementBoard = () => {
   const { announcements, currentDisplay, timer } = useAnnouncements();
-  const [previousDisplay, setPreviousDisplay] = useState<"announcements" | "timer">(currentDisplay);
+  const [visibleDisplay, setVisibleDisplay] = useState<"announcements" | "timer">(currentDisplay);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const [transitionCount, setTransitionCount] = useState(0);
   
-  // Function to handle display transitions with retries if needed
-  const handleDisplayTransition = useCallback(() => {
-    if (previousDisplay !== currentDisplay) {
-      // Increment transition counter to track attempts
-      setTransitionCount(prev => prev + 1);
+  // Effect to handle display changes with a smooth transition
+  useEffect(() => {
+    if (currentDisplay !== visibleDisplay) {
+      console.log(`Display changing from ${visibleDisplay} to ${currentDisplay}`);
       setIsTransitioning(true);
       
-      const message = currentDisplay === "timer" 
-        ? "Now displaying timer" 
-        : "Now displaying announcements";
-      
-      toast.info(message, {
-        position: "top-center",
-        duration: 3000,
-      });
-      
-      // Small delay to ensure transition animation completes
-      setTimeout(() => {
-        setPreviousDisplay(currentDisplay);
+      // Add a short delay to ensure animation completes
+      const transitionTimeout = setTimeout(() => {
+        setVisibleDisplay(currentDisplay);
         setIsTransitioning(false);
-        setTransitionCount(0); // Reset counter after successful transition
-      }, 600);
-    }
-  }, [currentDisplay, previousDisplay]);
-  
-  // Effect to handle display transitions
-  useEffect(() => {
-    handleDisplayTransition();
-  }, [handleDisplayTransition]);
-  
-  // Additional effect to force update if transition seems stuck
-  useEffect(() => {
-    // If we've been transitioning for too long (5+ seconds), force an update
-    if (isTransitioning) {
-      const forceUpdateTimeout = setTimeout(() => {
-        console.log("Forcing display update after timeout");
-        setPreviousDisplay(currentDisplay);
-        setIsTransitioning(false);
-      }, 5000);
+        console.log(`Display changed to ${currentDisplay}`);
+      }, 300);
       
-      return () => clearTimeout(forceUpdateTimeout);
+      return () => clearTimeout(transitionTimeout);
     }
-  }, [isTransitioning, currentDisplay]);
+  }, [currentDisplay, visibleDisplay]);
   
   // Check if timer is valid (exists and not expired)
   const isTimerValid = timer && new Date(timer.endTime) > new Date();
   
-  // Determine what to display based on current state
-  const shouldShowTimer = currentDisplay === "timer" && isTimerValid;
+  // If timer is invalid but we're supposed to show it, force to announcements
+  useEffect(() => {
+    if (currentDisplay === "timer" && !isTimerValid) {
+      console.log("Timer is invalid, forcing display to announcements");
+      setVisibleDisplay("announcements");
+    }
+  }, [currentDisplay, isTimerValid]);
+  
+  // Determine what should be displayed
+  const shouldShowTimer = visibleDisplay === "timer" && isTimerValid;
   
   return (
     <AnimatePresence mode="wait">
@@ -71,7 +51,7 @@ const AnnouncementBoard = () => {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.5 }}
+          transition={{ duration: 0.3 }}
         >
           {timer && <CountdownTimer timer={timer} />}
         </motion.div>
@@ -82,7 +62,7 @@ const AnnouncementBoard = () => {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.5 }}
+          transition={{ duration: 0.3 }}
         >
           <div className="grid grid-cols-1 gap-6">
             <AnimatePresence>

@@ -1,5 +1,4 @@
-
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,11 +19,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     announcements, 
     deleteAnnouncement, 
     currentDisplay,
-    setCurrentDisplay 
+    setCurrentDisplay,
+    timer
   } = useAnnouncements();
   
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isDisplayUpdating, setIsDisplayUpdating] = useState<boolean>(false);
+  
+  const [lastDisplay, setLastDisplay] = useState<string>(currentDisplay);
+  
+  useEffect(() => {
+    if (lastDisplay !== currentDisplay) {
+      setLastDisplay(currentDisplay);
+    }
+  }, [currentDisplay, lastDisplay]);
   
   const handleLogout = () => {
     toast.info("Logged out successfully");
@@ -32,16 +40,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   };
   
   const handleDisplayToggle = async (display: "announcements" | "timer") => {
+    if (display === currentDisplay) return;
+    
     setIsDisplayUpdating(true);
     
     try {
       await setCurrentDisplay(display);
-      toast.success(`Now displaying: ${display === "announcements" ? "Announcements" : "Timer"}`);
+      toast.success(`Display changed to: ${display === "announcements" ? "Announcements" : "Timer"}`);
     } catch (error) {
       console.error("Error updating display:", error);
       toast.error("Failed to update display settings");
     } finally {
-      setIsDisplayUpdating(false);
+      setTimeout(() => {
+        setIsDisplayUpdating(false);
+      }, 1000);
     }
   };
   
@@ -70,7 +82,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
       <div className="mb-8">
         <Card className="bg-card/70 backdrop-blur-sm p-4 border border-amongus-purple/20">
           <h2 className="mb-4 text-xl font-semibold text-white">Display Control</h2>
-          <div className="flex gap-4">
+          <div className="flex flex-col gap-4 sm:flex-row">
             <Button
               className={`flex items-center ${
                 currentDisplay === "announcements" 
@@ -81,7 +93,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
               disabled={isDisplayUpdating || currentDisplay === "announcements"}
             >
               <MessageSquare className="mr-2 h-4 w-4" /> 
-              {isDisplayUpdating ? "Updating..." : "Display Announcements"}
+              {isDisplayUpdating 
+                ? "Updating..."
+                : currentDisplay === "announcements" 
+                  ? "Currently Showing Announcements"
+                  : "Display Announcements"}
             </Button>
             
             <Button
@@ -91,11 +107,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                   : "bg-card hover:bg-amongus-purple/20"
               }`}
               onClick={() => handleDisplayToggle("timer")}
-              disabled={isDisplayUpdating || currentDisplay === "timer"}
+              disabled={isDisplayUpdating || currentDisplay === "timer" || !timer}
             >
               <Timer className="mr-2 h-4 w-4" /> 
-              {isDisplayUpdating ? "Updating..." : "Display Timer"}
+              {isDisplayUpdating 
+                ? "Updating..."
+                : currentDisplay === "timer" 
+                  ? "Currently Showing Timer"
+                  : timer 
+                    ? "Display Timer" 
+                    : "No Active Timer"}
             </Button>
+          </div>
+          <div className="mt-2 text-xs text-amongus-gray">
+            {currentDisplay === "timer" 
+              ? "Currently displaying timer to all connected devices." 
+              : "Currently displaying announcements to all connected devices."}
           </div>
         </Card>
       </div>

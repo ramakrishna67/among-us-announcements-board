@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -20,10 +20,6 @@ export interface Announcement {
   createdAt: Date;
   imageUrl?: string;
   videoUrl?: string;
-}
-
-interface DisplaySettings {
-  mode: "announcements" | "timer";
 }
 
 interface AnnouncementContextType {
@@ -57,6 +53,10 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [playSound, setPlaySound] = useState(false);
   const [soundDuration, setSoundDuration] = useState(5); // default 5 seconds
   const [loading, setLoading] = useState(true);
+  
+  // Create a ref to track the subscription status of the display settings channel
+  const displayChannelRef = useRef<any>(null);
+  const isSubscribedRef = useRef<boolean>(false);
   
   // Fetch initial data
   useEffect(() => {
@@ -124,37 +124,52 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
     };
     
-    // Create a display settings channel to sync display mode across clients
-    const displaySettingsChannel = supabase.channel('display_settings');
-    
-    displaySettingsChannel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        console.log('Subscribed to display settings channel');
-      }
-    });
-    
-    // Track presence state for display settings
-    displaySettingsChannel.on('presence', { event: 'sync' }, () => {
-      const state = displaySettingsChannel.presenceState();
-      console.log('Display settings state synced:', state);
+    // Initialize display settings channel
+    const initDisplayChannel = () => {
+      // Create a display settings channel to sync display mode across clients
+      const channel = supabase.channel('display_settings');
       
-      // Get the latest display settings from any client
-      const allStates = Object.values(state).flat() as any[];
-      if (allStates.length > 0) {
-        // Use the most recent state
-        const latestState = allStates.sort((a, b) => 
-          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-        )[0];
-        
-        if (latestState && latestState.display) {
-          console.log('Setting display mode from presence:', latestState.display);
-          setCurrentDisplay(latestState.display);
-        }
-      }
-    });
+      channel
+        .on('presence', { event: 'sync' }, () => {
+          const state = channel.presenceState();
+          console.log('Display settings state synced:', state);
+          
+          // Get the latest display settings from any client
+          const allStates = Object.values(state).flat() as any[];
+          if (allStates.length > 0) {
+            // Use the most recent state
+            const latestState = allStates.sort((a, b) => 
+              new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+            )[0];
+            
+            if (latestState && latestState.display) {
+              console.log('Setting display mode from presence:', latestState.display);
+              setCurrentDisplay(latestState.display);
+            }
+          }
+        })
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('Subscribed to display settings channel');
+            isSubscribedRef.current = true;
+            
+            // Once subscribed, broadcast current display mode
+            setTimeout(() => {
+              channel.track({
+                display: currentDisplay,
+                updated_at: new Date().toISOString()
+              });
+            }, 500);
+          }
+        });
+      
+      displayChannelRef.current = channel;
+      return channel;
+    };
     
     fetchAnnouncements();
     fetchActiveTimer();
+    const displayChannel = initDisplayChannel();
     
     // Set up realtime subscriptions
     const announcementsChannel = supabase
@@ -240,16 +255,40 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
             setTimerState(timerObj);
             setCurrentDisplay("timer");
             
+            // Update display mode globally through presence
+            if (isSubscribedRef.current && displayChannelRef.current) {
+              displayChannelRef.current.track({
+                display: "timer",
+                updated_at: new Date().toISOString()
+              });
+            }
+            
             toast.info("Timer updated!", {
               description: newTimer.title,
             });
           } else if (payload.eventType === 'UPDATE' && !newTimer.active && timer?.id === newTimer.id) {
             setTimerState(null);
             setCurrentDisplay("announcements");
+            
+            // Update display mode globally through presence
+            if (isSubscribedRef.current && displayChannelRef.current) {
+              displayChannelRef.current.track({
+                display: "announcements",
+                updated_at: new Date().toISOString()
+              });
+            }
           }
         } else if (payload.eventType === 'DELETE' && timer?.id === payload.old.id) {
           setTimerState(null);
           setCurrentDisplay("announcements");
+          
+          // Update display mode globally through presence
+          if (isSubscribedRef.current && displayChannelRef.current) {
+            displayChannelRef.current.track({
+              display: "announcements",
+              updated_at: new Date().toISOString()
+            });
+          }
         }
       })
       .subscribe();
@@ -258,16 +297,22 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return () => {
       supabase.removeChannel(announcementsChannel);
       supabase.removeChannel(timersChannel);
-      supabase.removeChannel(displaySettingsChannel);
+      if (displayChannelRef.current) {
+        supabase.removeChannel(displayChannelRef.current);
+      }
     };
-  }, [playSound, soundDuration, timer?.id]);
+  }, [playSound, soundDuration, timer?.id, currentDisplay]);
   
   // Update display settings function that tracks the change across all clients
   const updateDisplaySettings = async (display: "announcements" | "timer") => {
-    const displaySettingsChannel = supabase.channel('display_settings');
-    
     try {
-      await displaySettingsChannel.track({
+      if (!isSubscribedRef.current || !displayChannelRef.current) {
+        console.log('Display channel not ready yet, setting local display only');
+        setCurrentDisplay(display);
+        return;
+      }
+      
+      await displayChannelRef.current.track({
         display: display,
         updated_at: new Date().toISOString()
       });
@@ -276,7 +321,9 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
       console.log(`Display updated to: ${display}`);
     } catch (error) {
       console.error("Error updating display settings:", error);
-      toast.error("Failed to update display settings");
+      // Still update local state even if presence tracking fails
+      setCurrentDisplay(display);
+      toast.error("Failed to sync display settings");
     }
   };
   

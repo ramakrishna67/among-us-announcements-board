@@ -9,10 +9,13 @@ import { toast } from "sonner";
 const AnnouncementBoard = () => {
   const { announcements, currentDisplay, timer } = useAnnouncements();
   const [previousDisplay, setPreviousDisplay] = useState<"announcements" | "timer">(currentDisplay);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   
   // Effect to show a toast when display mode changes
   useEffect(() => {
     if (previousDisplay !== currentDisplay) {
+      setIsTransitioning(true);
+      
       const message = currentDisplay === "timer" 
         ? "Now displaying timer" 
         : "Now displaying announcements";
@@ -22,13 +25,23 @@ const AnnouncementBoard = () => {
         duration: 3000,
       });
       
-      setPreviousDisplay(currentDisplay);
+      // Small delay to ensure transition animation completes
+      setTimeout(() => {
+        setPreviousDisplay(currentDisplay);
+        setIsTransitioning(false);
+      }, 600);
     }
   }, [currentDisplay, previousDisplay]);
   
+  // Check if timer is valid (exists and not expired)
+  const isTimerValid = timer && new Date(timer.endTime) > new Date();
+  
+  // Determine what to display based on current state
+  const shouldShowTimer = currentDisplay === "timer" && isTimerValid;
+  
   return (
     <AnimatePresence mode="wait">
-      {currentDisplay === "timer" && timer ? (
+      {shouldShowTimer ? (
         <motion.div 
           key="timer"
           className="flex h-screen items-center justify-center p-4"
@@ -37,7 +50,7 @@ const AnnouncementBoard = () => {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <CountdownTimer timer={timer} />
+          {timer && <CountdownTimer timer={timer} />}
         </motion.div>
       ) : (
         <motion.div 
@@ -57,6 +70,7 @@ const AnnouncementBoard = () => {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
                   transition={{ duration: 0.3, delay: index * 0.1 }}
+                  className={`${announcement.type === "emergency" ? "border-2 border-amongus-red" : ""}`}
                 >
                   <AnnouncementCard announcement={announcement} />
                 </motion.div>

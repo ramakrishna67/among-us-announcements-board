@@ -1,5 +1,5 @@
 
-import React from "react";
+import React, { useRef, useEffect } from "react";
 import { useAnnouncements } from "@/context/AnnouncementContext";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -7,14 +7,15 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Volume, Volume2, VolumeX } from "lucide-react";
+import { Volume, Volume2, VolumeX, Music } from "lucide-react";
 
 const SoundControl = () => {
   const { 
     playSound, 
     setPlaySound, 
     soundDuration, 
-    setSoundDuration 
+    setSoundDuration,
+    testSound 
   } = useAnnouncements();
   
   const handleTestSound = () => {
@@ -24,35 +25,7 @@ const SoundControl = () => {
     }
     
     toast.success("Playing test sound");
-    
-    try {
-      // Create and play the announcement sound
-      const audio = new Audio("/announcement-sound.mp3");
-      audio.volume = 0.7; // Set volume to 70%
-      
-      // Play the sound
-      const playPromise = audio.play();
-      
-      // Handle play promise to catch any autoplay issues
-      if (playPromise !== undefined) {
-        playPromise
-          .then(() => {
-            console.log("Sound playing successfully");
-            // Stop sound after specified duration
-            setTimeout(() => {
-              audio.pause();
-              audio.currentTime = 0;
-            }, soundDuration * 1000);
-          })
-          .catch(error => {
-            console.error("Error playing sound:", error);
-            toast.error("Failed to play sound. Check browser autoplay settings.");
-          });
-      }
-    } catch (error) {
-      console.error("Error with sound test:", error);
-      toast.error("Could not play test sound");
-    }
+    testSound();
   };
   
   return (
@@ -102,7 +75,7 @@ const SoundControl = () => {
           className="among-button w-full mt-4"
           disabled={!playSound}
         >
-          Test Sound
+          <Music className="w-4 h-4 mr-2" /> Test Sound
         </Button>
         
         <div className="mt-4 rounded-md bg-card p-4 text-sm text-amongus-gray">

@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -34,6 +33,7 @@ interface AnnouncementContextType {
   setPlaySound: (play: boolean) => void;
   soundDuration: number;
   setSoundDuration: (duration: number) => void;
+  testSound: () => void;
 }
 
 const AnnouncementContext = createContext<AnnouncementContextType | undefined>(undefined);
@@ -46,6 +46,8 @@ export const useAnnouncements = () => {
   return context;
 };
 
+const SOUND_FILE_URL = "https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3";
+
 export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [currentDisplay, setCurrentDisplayState] = useState<"announcements" | "timer">("announcements");
@@ -54,21 +56,25 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [soundDuration, setSoundDuration] = useState(5); // default 5 seconds
   const [loading, setLoading] = useState(true);
   
-  // Simplified display channel setup
   const displayChannelRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   
-  // Preload audio for better performance
   useEffect(() => {
-    // Create audio element once and reuse it
-    audioRef.current = new Audio("/announcement-sound.mp3");
-    audioRef.current.volume = 0.7; // Set volume to 70%
-    
-    // Preload the audio
+    audioRef.current = new Audio(SOUND_FILE_URL);
+    audioRef.current.volume = 0.7;
     audioRef.current.load();
     
+    if (audioRef.current) {
+      audioRef.current.addEventListener('canplaythrough', () => {
+        console.log("Audio is ready to play through");
+      });
+      
+      audioRef.current.addEventListener('error', (e) => {
+        console.error("Audio loading error:", e);
+      });
+    }
+    
     return () => {
-      // Cleanup audio on component unmount
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.src = "";
@@ -76,24 +82,26 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
     };
   }, []);
   
-  // Function to play announcement sound
   const playAnnouncementSound = () => {
-    if (!playSound || !audioRef.current) return;
+    if (!playSound) return;
     
     console.log("Playing announcement sound");
     
     try {
-      // Reset audio to start
+      if (!audioRef.current) {
+        audioRef.current = new Audio(SOUND_FILE_URL);
+        audioRef.current.volume = 0.7;
+        audioRef.current.load();
+      }
+      
       audioRef.current.currentTime = 0;
       
-      // Play the sound with error handling
       const playPromise = audioRef.current.play();
       
       if (playPromise !== undefined) {
         playPromise
           .then(() => {
             console.log("Sound playing successfully");
-            // Stop sound after specified duration
             setTimeout(() => {
               if (audioRef.current) {
                 audioRef.current.pause();
@@ -103,8 +111,12 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
           })
           .catch(error => {
             console.error("Error playing sound:", error);
-            // Don't show toast here to avoid confusion for users
-            // Just log the error for debugging
+            const fallbackAudio = new Audio(SOUND_FILE_URL);
+            fallbackAudio.volume = 0.7;
+            fallbackAudio.play().catch(fallbackError => {
+              console.error("Fallback audio also failed:", fallbackError);
+              toast.error("Sound playback failed. Check browser autoplay settings.");
+            });
           });
       }
     } catch (error) {
@@ -112,7 +124,10 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
   
-  // Fetch initial data
+  const testSound = () => {
+    playAnnouncementSound();
+  };
+  
   useEffect(() => {
     const fetchAnnouncements = async () => {
       try {
@@ -155,7 +170,7 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
           .single();
           
         if (error) {
-          if (error.code !== 'PGRST116') { // PGRST116 is "No rows returned" which is expected if no timer is active
+          if (error.code !== 'PGRST116') {
             console.error("Error fetching timer:", error);
           }
           return;
@@ -169,7 +184,6 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
             endTime: new Date(data.end_time)
           });
           
-          // Only set to timer display if it's still valid
           if (new Date(data.end_time) > new Date()) {
             setCurrentDisplayState("timer");
           }
@@ -179,18 +193,15 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
     };
     
-    // Initialize display settings channel with a simpler approach
     const initDisplayChannel = () => {
       const channel = supabase.channel('display_settings');
       
-      // Set up broadcast channel for syncing display type
       channel
         .on('broadcast', { event: 'display_change' }, (payload) => {
           console.log('Received display change broadcast:', payload);
           if (payload?.payload?.display) {
             setCurrentDisplayState(payload.payload.display);
             
-            // Show toast when display changes
             const message = payload.payload.display === "timer" 
               ? "Now displaying timer" 
               : "Now displaying announcements";
@@ -214,7 +225,6 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
     fetchActiveTimer();
     const displayChannel = initDisplayChannel();
     
-    // Set up realtime subscriptions
     const announcementsChannel = supabase
       .channel('public:announcements')
       .on('postgres_changes', { 
@@ -238,7 +248,6 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
           
           setAnnouncements(prev => [formattedAnnouncement, ...prev]);
           
-          // Play sound using the dedicated function
           playAnnouncementSound();
           
           toast.info("New announcement received!", {
@@ -288,7 +297,6 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
             
             setTimerState(timerObj);
             
-            // Only switch to timer if it's still valid
             if (new Date(newTimer.end_time) > new Date()) {
               setCurrentDisplayAndBroadcast("timer");
             }
@@ -307,7 +315,6 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
       })
       .subscribe();
       
-    // Cleanup function
     return () => {
       supabase.removeChannel(announcementsChannel);
       supabase.removeChannel(timersChannel);
@@ -317,14 +324,11 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
     };
   }, [timer?.id]);
   
-  // Simplified function to update and broadcast display settings
   const setCurrentDisplayAndBroadcast = async (display: "announcements" | "timer") => {
     console.log(`Setting display to: ${display}`);
     
-    // Update local state immediately
     setCurrentDisplayState(display);
     
-    // Broadcast the change to all clients if channel is available
     if (displayChannelRef.current) {
       try {
         await displayChannelRef.current.send({
@@ -386,7 +390,6 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
   
   const setTimer = async (timerData: Timer | null) => {
     try {
-      // First, deactivate any existing active timers
       await supabase
         .from('timers')
         .update({ active: false })
@@ -407,11 +410,9 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
         if (error) throw error;
         
         toast.success("Timer set successfully!");
-        // Switch to timer display
         setCurrentDisplayAndBroadcast("timer");
       } else {
         setTimerState(null);
-        // Switch back to announcements
         setCurrentDisplayAndBroadcast("announcements");
         toast.info("Timer cleared");
       }
@@ -421,7 +422,6 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
   
-  // If still loading, show a simple loading state or nothing
   if (loading) {
     return null;
   }
@@ -440,6 +440,7 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setPlaySound,
         soundDuration,
         setSoundDuration,
+        testSound,
       }}
     >
       {children}

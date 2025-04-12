@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useAnnouncements } from "@/context/AnnouncementContext";
 import AnnouncementCard from "./AnnouncementCard";
 import CountdownTimer from "./CountdownTimer";
@@ -10,10 +10,13 @@ const AnnouncementBoard = () => {
   const { announcements, currentDisplay, timer } = useAnnouncements();
   const [previousDisplay, setPreviousDisplay] = useState<"announcements" | "timer">(currentDisplay);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [transitionCount, setTransitionCount] = useState(0);
   
-  // Effect to show a toast when display mode changes
-  useEffect(() => {
+  // Function to handle display transitions with retries if needed
+  const handleDisplayTransition = useCallback(() => {
     if (previousDisplay !== currentDisplay) {
+      // Increment transition counter to track attempts
+      setTransitionCount(prev => prev + 1);
       setIsTransitioning(true);
       
       const message = currentDisplay === "timer" 
@@ -29,9 +32,29 @@ const AnnouncementBoard = () => {
       setTimeout(() => {
         setPreviousDisplay(currentDisplay);
         setIsTransitioning(false);
+        setTransitionCount(0); // Reset counter after successful transition
       }, 600);
     }
   }, [currentDisplay, previousDisplay]);
+  
+  // Effect to handle display transitions
+  useEffect(() => {
+    handleDisplayTransition();
+  }, [handleDisplayTransition]);
+  
+  // Additional effect to force update if transition seems stuck
+  useEffect(() => {
+    // If we've been transitioning for too long (5+ seconds), force an update
+    if (isTransitioning) {
+      const forceUpdateTimeout = setTimeout(() => {
+        console.log("Forcing display update after timeout");
+        setPreviousDisplay(currentDisplay);
+        setIsTransitioning(false);
+      }, 5000);
+      
+      return () => clearTimeout(forceUpdateTimeout);
+    }
+  }, [isTransitioning, currentDisplay]);
   
   // Check if timer is valid (exists and not expired)
   const isTimerValid = timer && new Date(timer.endTime) > new Date();

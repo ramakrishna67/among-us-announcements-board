@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
@@ -6,7 +7,7 @@ import AnnouncementForm from "./AnnouncementForm";
 import TimerForm from "./TimerForm";
 import SoundControl from "./SoundControl";
 import { useAnnouncements } from "@/context/AnnouncementContext";
-import { LogOut, Bell, Timer, MessageSquare } from "lucide-react";
+import { LogOut, Bell, Timer, MessageSquare, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 
@@ -25,12 +26,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isDisplayUpdating, setIsDisplayUpdating] = useState<boolean>(false);
-  
   const [lastDisplay, setLastDisplay] = useState<string>(currentDisplay);
+  const [updateAttemptCount, setUpdateAttemptCount] = useState(0);
   
+  // Effect to track display changes
   useEffect(() => {
     if (lastDisplay !== currentDisplay) {
       setLastDisplay(currentDisplay);
+      setIsDisplayUpdating(false);
     }
   }, [currentDisplay, lastDisplay]);
   
@@ -43,17 +46,37 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     if (display === currentDisplay) return;
     
     setIsDisplayUpdating(true);
+    setUpdateAttemptCount(prev => prev + 1);
     
     try {
+      console.log(`Changing display from ${currentDisplay} to ${display}`);
       await setCurrentDisplay(display);
       toast.success(`Display changed to: ${display === "announcements" ? "Announcements" : "Timer"}`);
+      
+      // Set a timeout to reset updating state if the change doesn't happen
+      setTimeout(() => {
+        if (lastDisplay !== display) {
+          setIsDisplayUpdating(false);
+        }
+      }, 5000);
     } catch (error) {
       console.error("Error updating display:", error);
+      setIsDisplayUpdating(false);
       toast.error("Failed to update display settings");
-    } finally {
-      setTimeout(() => {
-        setIsDisplayUpdating(false);
-      }, 1000);
+    }
+  };
+  
+  // Function to retry display change if it seems stuck
+  const retryDisplayChange = async () => {
+    const targetDisplay = currentDisplay === "announcements" ? "timer" : "announcements";
+    setIsDisplayUpdating(true);
+    
+    try {
+      toast.info(`Retrying change to ${targetDisplay}...`);
+      await setCurrentDisplay(targetDisplay);
+    } catch (error) {
+      console.error("Error in retry:", error);
+      setIsDisplayUpdating(false);
     }
   };
   
@@ -93,8 +116,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
               disabled={isDisplayUpdating || currentDisplay === "announcements"}
             >
               <MessageSquare className="mr-2 h-4 w-4" /> 
-              {isDisplayUpdating 
-                ? "Updating..."
+              {isDisplayUpdating && lastDisplay === "timer"
+                ? "Changing to Announcements..."
                 : currentDisplay === "announcements" 
                   ? "Currently Showing Announcements"
                   : "Display Announcements"}
@@ -110,19 +133,32 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
               disabled={isDisplayUpdating || currentDisplay === "timer" || !timer}
             >
               <Timer className="mr-2 h-4 w-4" /> 
-              {isDisplayUpdating 
-                ? "Updating..."
+              {isDisplayUpdating && lastDisplay === "announcements"
+                ? "Changing to Timer..."
                 : currentDisplay === "timer" 
                   ? "Currently Showing Timer"
                   : timer 
                     ? "Display Timer" 
                     : "No Active Timer"}
             </Button>
+            
+            {isDisplayUpdating && updateAttemptCount > 1 && (
+              <Button
+                variant="outline"
+                className="flex items-center"
+                onClick={retryDisplayChange}
+              >
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> 
+                Retry Change
+              </Button>
+            )}
           </div>
           <div className="mt-2 text-xs text-amongus-gray">
-            {currentDisplay === "timer" 
-              ? "Currently displaying timer to all connected devices." 
-              : "Currently displaying announcements to all connected devices."}
+            {isDisplayUpdating 
+              ? "Updating display on all connected devices..."
+              : currentDisplay === "timer" 
+                ? "Currently displaying timer to all connected devices." 
+                : "Currently displaying announcements to all connected devices."}
           </div>
         </Card>
       </div>

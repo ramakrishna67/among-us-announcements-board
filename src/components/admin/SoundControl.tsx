@@ -25,14 +25,34 @@ const SoundControl = () => {
     
     toast.success("Playing test sound");
     
-    // In a real app, we would have actual sound files
-    const audio = new Audio("/announcement-sound.mp3");
-    audio.play();
-    
-    setTimeout(() => {
-      audio.pause();
-      audio.currentTime = 0;
-    }, soundDuration * 1000);
+    try {
+      // Create and play the announcement sound
+      const audio = new Audio("/announcement-sound.mp3");
+      audio.volume = 0.7; // Set volume to 70%
+      
+      // Play the sound
+      const playPromise = audio.play();
+      
+      // Handle play promise to catch any autoplay issues
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            console.log("Sound playing successfully");
+            // Stop sound after specified duration
+            setTimeout(() => {
+              audio.pause();
+              audio.currentTime = 0;
+            }, soundDuration * 1000);
+          })
+          .catch(error => {
+            console.error("Error playing sound:", error);
+            toast.error("Failed to play sound. Check browser autoplay settings.");
+          });
+      }
+    } catch (error) {
+      console.error("Error with sound test:", error);
+      toast.error("Could not play test sound");
+    }
   };
   
   return (

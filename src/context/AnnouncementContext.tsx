@@ -50,12 +50,67 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [currentDisplay, setCurrentDisplayState] = useState<"announcements" | "timer">("announcements");
   const [timer, setTimerState] = useState<Timer | null>(null);
-  const [playSound, setPlaySound] = useState(false);
+  const [playSound, setPlaySound] = useState(true); // Default to true for better user experience
   const [soundDuration, setSoundDuration] = useState(5); // default 5 seconds
   const [loading, setLoading] = useState(true);
   
   // Simplified display channel setup
   const displayChannelRef = useRef<any>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  
+  // Preload audio for better performance
+  useEffect(() => {
+    // Create audio element once and reuse it
+    audioRef.current = new Audio("/announcement-sound.mp3");
+    audioRef.current.volume = 0.7; // Set volume to 70%
+    
+    // Preload the audio
+    audioRef.current.load();
+    
+    return () => {
+      // Cleanup audio on component unmount
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = "";
+      }
+    };
+  }, []);
+  
+  // Function to play announcement sound
+  const playAnnouncementSound = () => {
+    if (!playSound || !audioRef.current) return;
+    
+    console.log("Playing announcement sound");
+    
+    try {
+      // Reset audio to start
+      audioRef.current.currentTime = 0;
+      
+      // Play the sound with error handling
+      const playPromise = audioRef.current.play();
+      
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            console.log("Sound playing successfully");
+            // Stop sound after specified duration
+            setTimeout(() => {
+              if (audioRef.current) {
+                audioRef.current.pause();
+                audioRef.current.currentTime = 0;
+              }
+            }, soundDuration * 1000);
+          })
+          .catch(error => {
+            console.error("Error playing sound:", error);
+            // Don't show toast here to avoid confusion for users
+            // Just log the error for debugging
+          });
+      }
+    } catch (error) {
+      console.error("Error with announcement sound:", error);
+    }
+  };
   
   // Fetch initial data
   useEffect(() => {
@@ -183,17 +238,8 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
           
           setAnnouncements(prev => [formattedAnnouncement, ...prev]);
           
-          // Play sound if enabled
-          if (playSound) {
-            const audio = new Audio("/announcement-sound.mp3");
-            audio.play();
-            
-            // Stop sound after specified duration
-            setTimeout(() => {
-              audio.pause();
-              audio.currentTime = 0;
-            }, soundDuration * 1000);
-          }
+          // Play sound using the dedicated function
+          playAnnouncementSound();
           
           toast.info("New announcement received!", {
             description: newAnnouncement.title,
@@ -269,7 +315,7 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
         supabase.removeChannel(displayChannelRef.current);
       }
     };
-  }, [playSound, soundDuration, timer?.id]);
+  }, [timer?.id]);
   
   // Simplified function to update and broadcast display settings
   const setCurrentDisplayAndBroadcast = async (display: "announcements" | "timer") => {
